@@ -18,7 +18,7 @@ HydraGraph therefore inserts AST-derived vertices and edges with batched, parame
 
 - `find_callers`: direct reverse traversal over `CALLS` edges.
 - `impact_of_change`: bounded transitive reverse traversal for a symbol's blast radius.
-- `explain_context`: graph-grounded neighboring symbols and source locations that the MCP client's model can explain with citations.
+- `explain_context`: accepts a natural-language question, matches it to a HydraDB symbol, and returns structured callers, callees, call-site evidence, and two-hop impact for the MCP client's own model to reason over.
 
 ## Quickstart
 
@@ -29,7 +29,6 @@ npm install
 Copy-Item .env.example .env
 npm run hydradb:start
 $env:HYDRADB_TOKEN = "local-development-token-32-bytes"
-npm run hydradb:smoke
 ```
 
 The development script binds Bolt, HTTP, and admin ports to `127.0.0.1` only. It must not be used as a public deployment configuration.
@@ -43,6 +42,8 @@ npm run index -- ../target-docwise
 npm run hydradb:validate
 npm run mcp:smoke
 ```
+
+`mcp:smoke` verifies the tool schemas and makes live graph-backed `impact_of_change` and natural-language `explain_context` calls. No external LLM API key is required; the calling MCP client performs the reasoning.
 
 The index command replaces HydraGraph's generated `CodeNode` data and its three relationship types. The MVP intentionally stores one repository per configured HydraDB graph.
 
@@ -75,7 +76,6 @@ Without HydraDB, this project is an AST dump plus in-process maps. HydraDB persi
 ```powershell
 npm run check
 npm test
-npm run hydradb:smoke
 npm run hydradb:validate
 npm run mcp:smoke
 ```

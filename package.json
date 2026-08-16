@@ -13,7 +13,6 @@
     "dev": "tsx src/server.ts",
     "index": "tsx src/cli.ts",
     "hydradb:start": "powershell -ExecutionPolicy Bypass -File scripts/start-hydradb.ps1",
-    "hydradb:smoke": "tsx src/smoke.ts",
     "hydradb:validate": "tsx src/validate.ts",
     "mcp:smoke": "npm run build && node dist/src/mcp-smoke.js",
     "test": "vitest run"

@@ -18,6 +18,11 @@ try {
   for (const expected of ["explain_context", "find_callers", "impact_of_change"]) {
     if (!names.includes(expected)) throw new Error(`MCP server did not expose ${expected}: ${names.join(", ")}`);
   }
+  const explainTool = tools.tools.find((tool) => tool.name === "explain_context");
+  const explainProperties = explainTool?.inputSchema.properties ?? {};
+  if (!("question" in explainProperties) || "symbol" in explainProperties) {
+    throw new Error(`explain_context did not expose the natural-language question schema: ${JSON.stringify(explainTool?.inputSchema)}`);
+  }
 
   const response = await client.callTool({
     name: "impact_of_change",
@@ -26,6 +31,15 @@ try {
   const payload = JSON.stringify(response.content);
   if (!payload.includes("src.components.ScanView.ScanView.handlePasteSubmit")) {
     throw new Error(`MCP impact response lacked ScanView.handlePasteSubmit: ${payload}`);
+  }
+
+  const explanation = await client.callTool({
+    name: "explain_context",
+    arguments: { question: "what would break if I changed how analyzeWithAI works?" },
+  });
+  const explanationPayload = JSON.stringify(explanation.content);
+  if (!explanationPayload.includes("src.context.DocumentContext.DocumentProvider.analyzeWithAI") || !explanationPayload.includes("evidence")) {
+    throw new Error(`MCP explanation lacked the matched symbol or graph evidence: ${explanationPayload}`);
   }
 
   console.log(`MCP stdio smoke check passed (${names.join(", ")}).`);

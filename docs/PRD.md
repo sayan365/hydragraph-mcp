@@ -1,6 +1,6 @@
 # HydraGraph MCP — Product Requirements and Progress
 
-Last updated: August 16, 2026
+Last updated: August 17, 2026
 
 ## Product
 
@@ -35,7 +35,7 @@ From the actual Docwise source, HydraGraph resolves three direct callers (`scanS
 
 - `find_callers(symbol)`: direct incoming `CALLS` relationships.
 - `impact_of_change(symbol)`: bounded transitive reverse traversal.
-- `explain_context(symbol)`: callers, callees, and exact source locations for client-side explanation.
+- `explain_context(question)`: match a free-text question to a HydraDB symbol and return structured callers, callees, call-site evidence, and two-hop impact for the calling MCP agent to reason over.
 
 ## Progress tracker
 
@@ -49,6 +49,8 @@ From the actual Docwise source, HydraGraph resolves three direct callers (`scanS
 | Self-hosted HTTP smoke check | Done | Official container healthy on localhost; mutation/read round trip passed. |
 | Ingest Docwise | Done | Generated graph replaced with 86 Docwise nodes and 155 relationships; live assertions pass. |
 | MCP client integration | Automated check done | Stdio handshake exposes all three tools and a live Docwise `impact_of_change` call passes. Interactive demo remains. |
+| Natural-language graph context | Done | Free-text schema, HydraDB symbol matching, caller/callee reuse, two-hop impact, explicit no-match response, and raw call-site evidence are implemented and exercised through a real MCP client. No external LLM dependency. |
+| Smoke-data cleanup | Done | The two `HydraGraphSmoke` nodes were deleted from the live graph and the smoke writer/script was removed. |
 | Demo and submission | Pending | Capture a real interactive refactor session and verify submission links. |
 
 ## Acceptance criteria
@@ -59,7 +61,8 @@ From the actual Docwise source, HydraGraph resolves three direct callers (`scanS
 4. [x] Live `find_callers(analyzeWithAI)` returns the three scan functions.
 5. [x] Live `impact_of_change(analyzeWithAI)` returns the four upstream `ScanView` handlers.
 6. [x] MCP stdio smoke check returns the same Docwise impact chain.
-7. [ ] Capture a real interactive MCP client session.
+7. [x] A real `explain_context(question)` MCP call returns the matched symbol and structured graph evidence.
+8. [ ] Capture a real interactive MCP client session.
 
 ## Risks and constraints
 
@@ -68,3 +71,4 @@ From the actual Docwise source, HydraGraph resolves three direct callers (`scanS
 - HydraDB rejects `MERGE` followed by some clause shapes; ingestion uses tested batch statements and separate node/relationship writes.
 - Development ports bind only to `127.0.0.1`; the startup script is not a production deployment configuration.
 - The initial graph is single-repository by design. Multi-repo namespacing is out of hackathon scope.
+- `explain_context` deliberately returns evidence rather than pre-synthesizing an answer; the calling MCP agent is responsible for reasoning over it.

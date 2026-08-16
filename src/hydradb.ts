@@ -8,6 +8,14 @@ export interface HydraDbConfig {
   cellId: string;
 }
 
+export interface GraphSymbol {
+  qualifiedName: string;
+  name: string;
+  kind: string;
+  file: string;
+  line: number;
+}
+
 interface HydraValue { type: string; value?: unknown }
 interface HydraResponse {
   query_id: string;
@@ -53,7 +61,7 @@ export class HydraDbClient {
 
   async findCallers(symbol: string): Promise<Record<string, unknown>[]> {
     const response = await this.query(
-      "MATCH (caller:CodeNode)-[:CALLS]->(target:CodeNode {qualified_name: $symbol}) RETURN caller.qualified_name AS caller, caller.file AS file, caller.start_line AS line",
+      "MATCH (caller:CodeNode)-[relation:CALLS]->(target:CodeNode {qualified_name: $symbol}) RETURN caller.qualified_name AS caller, caller.file AS file, caller.start_line AS line, relation.evidence AS evidence",
       { symbol },
     );
     return rowsToObjects(response);
@@ -72,7 +80,7 @@ export class HydraDbClient {
           if (typeof qualifiedName !== "string" || visited.has(qualifiedName)) continue;
           visited.add(qualifiedName);
           next.push(qualifiedName);
-          affected.push({ symbol: qualifiedName, file: caller.file, line: caller.line, depth });
+          affected.push({ symbol: qualifiedName, file: caller.file, line: caller.line, evidence: caller.evidence, depth });
         }
       }
       frontier = next;
@@ -83,7 +91,7 @@ export class HydraDbClient {
 
   async findCallees(symbol: string): Promise<Record<string, unknown>[]> {
     const response = await this.query(
-      "MATCH (source:CodeNode {qualified_name: $symbol})-[:CALLS]->(callee:CodeNode) RETURN callee.qualified_name AS callee, callee.file AS file, callee.start_line AS line",
+      "MATCH (source:CodeNode {qualified_name: $symbol})-[relation:CALLS]->(callee:CodeNode) RETURN callee.qualified_name AS callee, callee.file AS file, callee.start_line AS line, relation.evidence AS evidence",
       { symbol },
     );
     return rowsToObjects(response);
@@ -92,6 +100,22 @@ export class HydraDbClient {
   async contextFor(symbol: string): Promise<{ callers: Record<string, unknown>[]; callees: Record<string, unknown>[] }> {
     const [callers, callees] = await Promise.all([this.findCallers(symbol), this.findCallees(symbol)]);
     return { callers, callees };
+  }
+
+  async listSymbols(): Promise<GraphSymbol[]> {
+    const response = await this.query(
+      "MATCH (n:CodeNode) RETURN n.qualified_name AS qualified_name, n.name AS name, n.kind AS kind, n.file AS file, n.start_line AS line",
+    );
+    return rowsToObjects(response).flatMap((row) => {
+      if (
+        typeof row.qualified_name !== "string" ||
+        typeof row.name !== "string" ||
+        typeof row.kind !== "string" ||
+        typeof row.file !== "string" ||
+        typeof row.line !== "number"
+      ) return [];
+      return [{ qualifiedName: row.qualified_name, name: row.name, kind: row.kind, file: row.file, line: row.line }];
+    });
   }
 
   private ingestNodes(nodes: CodeNode[]): Promise<HydraResponse> {

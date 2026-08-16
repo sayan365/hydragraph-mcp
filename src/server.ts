@@ -2,9 +2,11 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
+import { ExplainContextService } from "./explain-context.js";
 import { configFromEnvironment, HydraDbClient } from "./hydradb.js";
 
 const client = new HydraDbClient(configFromEnvironment());
+const explainer = new ExplainContextService(client);
 const server = new McpServer({ name: "hydragraph", version: "0.1.0" });
 
 server.tool(
@@ -23,9 +25,9 @@ server.tool(
 
 server.tool(
   "explain_context",
-  "Return graph-grounded neighboring symbols and source locations for a symbol. Use these citations to explain the code in the MCP client's own model.",
-  { symbol: z.string().describe("Fully-qualified symbol whose structural context is needed") },
-  async ({ symbol }) => result(await client.contextFor(symbol)),
+  "Given a natural-language question about the codebase, find the most relevant symbol and return its callers, callees, call-site evidence, and two-hop change impact from HydraDB. Use this structured graph data to answer the user's question yourself.",
+  { question: z.string().min(1).describe("Free-text codebase question, for example: what happens if I change analyzeWithAI's return type?") },
+  async ({ question }) => result(await explainer.answer(question)),
 );
 
 await server.connect(new StdioServerTransport());
