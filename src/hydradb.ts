@@ -43,6 +43,14 @@ export class HydraDbClient {
     }
   }
 
+  async replaceCodeGraph(graph: CodeGraph, batchSize = 200): Promise<void> {
+    for (const kind of ["CALLS", "IMPORTS", "CONTAINS"] as const) {
+      await this.query(`MATCH ()-[r:${kind}]->() DELETE r`);
+    }
+    await this.query("MATCH (n:CodeNode) DELETE n");
+    await this.ingest(graph, batchSize);
+  }
+
   async findCallers(symbol: string): Promise<Record<string, unknown>[]> {
     const response = await this.query(
       "MATCH (caller:CodeNode)-[:CALLS]->(target:CodeNode {qualified_name: $symbol}) RETURN caller.qualified_name AS caller, caller.file AS file, caller.start_line AS line",
@@ -51,20 +59,39 @@ export class HydraDbClient {
     return rowsToObjects(response);
   }
 
-  async impactOfChange(symbol: string): Promise<Record<string, unknown>[]> {
+  async impactOfChange(symbol: string, maxDepth = 10): Promise<Record<string, unknown>[]> {
+    const visited = new Set([symbol]);
+    const affected: Record<string, unknown>[] = [];
+    let frontier = [symbol];
+
+    for (let depth = 1; depth <= maxDepth && frontier.length > 0; depth++) {
+      const next: string[] = [];
+      for (const current of frontier) {
+        for (const caller of await this.findCallers(current)) {
+          const qualifiedName = caller.caller;
+          if (typeof qualifiedName !== "string" || visited.has(qualifiedName)) continue;
+          visited.add(qualifiedName);
+          next.push(qualifiedName);
+          affected.push({ symbol: qualifiedName, file: caller.file, line: caller.line, depth });
+        }
+      }
+      frontier = next;
+    }
+
+    return affected;
+  }
+
+  async findCallees(symbol: string): Promise<Record<string, unknown>[]> {
     const response = await this.query(
-      "MATCH (affected:CodeNode)-[:CALLS*1..10]->(target:CodeNode {qualified_name: $symbol}) RETURN affected.qualified_name AS symbol, affected.file AS file, affected.start_line AS line",
+      "MATCH (source:CodeNode {qualified_name: $symbol})-[:CALLS]->(callee:CodeNode) RETURN callee.qualified_name AS callee, callee.file AS file, callee.start_line AS line",
       { symbol },
     );
     return rowsToObjects(response);
   }
 
-  async contextFor(symbol: string): Promise<Record<string, unknown>[]> {
-    const response = await this.query(
-      "MATCH (related:CodeNode)-[:CALLS]->(target:CodeNode {qualified_name: $symbol}) RETURN related.qualified_name AS symbol, related.file AS file, related.start_line AS line",
-      { symbol },
-    );
-    return rowsToObjects(response);
+  async contextFor(symbol: string): Promise<{ callers: Record<string, unknown>[]; callees: Record<string, unknown>[] }> {
+    const [callers, callees] = await Promise.all([this.findCallers(symbol), this.findCallees(symbol)]);
+    return { callers, callees };
   }
 
   private ingestNodes(nodes: CodeNode[]): Promise<HydraResponse> {

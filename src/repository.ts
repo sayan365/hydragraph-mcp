@@ -2,17 +2,17 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { ParsedFile } from "./model.js";
-import { PythonParser } from "./python-parser.js";
+import { TypeScriptParser } from "./typescript-parser.js";
 
 const SKIPPED_DIRECTORIES = new Set([".git", ".venv", "venv", "node_modules", "__pycache__", "dist", "build"]);
 
-export async function parsePythonRepository(root: string): Promise<ParsedFile[]> {
+export async function parseRepository(root: string): Promise<ParsedFile[]> {
   const absoluteRoot = path.resolve(root);
   const files = await walk(absoluteRoot);
-  const parser = new PythonParser();
-  return Promise.all(files.filter((file) => file.endsWith(".py")).map(async (file) => {
+  const parser = new TypeScriptParser();
+  return Promise.all(files.filter((file) => /\.(?:ts|tsx)$/.test(file) && !file.endsWith(".d.ts")).map(async (file) => {
     const relativePath = path.relative(absoluteRoot, file).replaceAll("\\", "/");
-    return parser.parse(await readFile(file, "utf8"), relativePath);
+    return parser.parse(await readFile(file, "utf8"), relativePath, file.endsWith(".tsx"));
   }));
 }
 

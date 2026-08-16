@@ -4,14 +4,18 @@
   "description": "Graph-native code intelligence for MCP, powered by self-hosted HydraDB",
   "type": "module",
   "bin": {
-    "hydragraph": "./dist/server.js",
-    "hydragraph-index": "./dist/cli.js"
+    "hydragraph": "./dist/src/server.js",
+    "hydragraph-index": "./dist/src/cli.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "dev": "tsx src/server.ts",
     "index": "tsx src/cli.ts",
+    "hydradb:start": "powershell -ExecutionPolicy Bypass -File scripts/start-hydradb.ps1",
+    "hydradb:smoke": "tsx src/smoke.ts",
+    "hydradb:validate": "tsx src/validate.ts",
+    "mcp:smoke": "npm run build && node dist/src/mcp-smoke.js",
     "test": "vitest run"
   },
   "engines": {
@@ -19,8 +23,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.3",
-    "tree-sitter": "^0.22.4",
-    "tree-sitter-python": "^0.23.6",
+    "tree-sitter": "^0.21.1",
+    "tree-sitter-typescript": "^0.23.2",
     "zod": "^3.25.76"
   },
   "devDependencies": {
