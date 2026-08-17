@@ -1,4 +1,4 @@
-export type CodeNodeKind = "file" | "class" | "function" | "method";
+export type CodeNodeKind = "file" | "class" | "function" | "method" | "route";
 
 export interface CodeNode {
   id: number;
@@ -8,9 +8,12 @@ export interface CodeNode {
   file: string;
   startLine: number;
   endLine: number;
+  httpMethod?: string;
+  routePath?: string;
+  handlerQualifiedName?: string;
 }
 
-export type CodeEdgeKind = "CONTAINS" | "CALLS" | "IMPORTS";
+export type CodeEdgeKind = "CONTAINS" | "CALLS" | "CALLS_API" | "IMPORTS";
 
 export interface CodeEdge {
   id: number;
@@ -24,7 +27,15 @@ export interface ParsedFile {
   file: CodeNode;
   symbols: CodeNode[];
   calls: ParsedCall[];
+  apiCalls: ParsedApiCall[];
   imports: ParsedImport[];
+  routes: CodeNode[];
+}
+
+export interface ParsedApiCall {
+  callerQualifiedName: string;
+  path: string;
+  line: number;
 }
 
 export interface ParsedCall {
@@ -45,4 +56,5 @@ export interface CodeGraph {
   nodes: CodeNode[];
   edges: CodeEdge[];
   unresolvedCalls: ParsedCall[];
+  unresolvedApiCalls: ParsedApiCall[];
 }

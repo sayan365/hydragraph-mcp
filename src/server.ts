@@ -11,15 +11,15 @@ const server = new McpServer({ name: "hydragraph", version: "0.1.0" });
 
 server.tool(
   "find_callers",
-  "Find functions or methods that directly call an exact fully-qualified TypeScript symbol.",
-  { symbol: z.string().describe("Fully-qualified symbol, for example src.context.DocumentContext.DocumentProvider.analyzeWithAI") },
+  "Find code nodes that directly depend on an exact qualified symbol or HTTP route through CALLS or CALLS_API.",
+  { symbol: z.string().describe("Qualified symbol or route, for example api._backend.route.POST./api/analyze-document") },
   async ({ symbol }) => result(await client.findCallers(symbol)),
 );
 
 server.tool(
   "impact_of_change",
-  "Find the transitive blast radius of changing an exact fully-qualified TypeScript symbol.",
-  { symbol: z.string().describe("Fully-qualified symbol to trace backwards through CALLS edges") },
+  "Find the transitive blast radius of changing an exact qualified symbol or HTTP route across CALLS and CALLS_API edges.",
+  { symbol: z.string().describe("Qualified symbol or route to trace backwards through dependency edges") },
   async ({ symbol }) => result(await client.impactOfChange(symbol)),
 );
 

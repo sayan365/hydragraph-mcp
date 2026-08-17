@@ -5,6 +5,7 @@ const analyze = "src.context.DocumentContext.DocumentProvider.analyzeWithAI";
 const scanSample = "src.context.DocumentContext.DocumentProvider.scanSample";
 const scanText = "src.context.DocumentContext.DocumentProvider.scanDocumentText";
 const scanFile = "src.context.DocumentContext.DocumentProvider.scanDocumentFile";
+const analyzeRoute = "api._backend.route.POST./api/analyze-document";
 
 const callers = await client.findCallers(analyze);
 for (const expected of [scanSample, scanText, scanFile]) {
@@ -24,8 +25,13 @@ for (const expected of [
 
 const context = await client.contextFor(analyze);
 assertIncludes(context.callees, "callee", "src.data.languages.getLanguage", "callees of analyzeWithAI");
+assertIncludes(context.callees, "callee", analyzeRoute, "API callees of analyzeWithAI");
 
-console.log(JSON.stringify({ analyze, callers, impact, analyzeContext: context }, null, 2));
+const routeImpact = await client.impactOfChange(analyzeRoute, 2);
+assertIncludes(routeImpact, "symbol", analyze, "impact of POST /api/analyze-document");
+assertIncludes(routeImpact, "symbol", scanSample, "two-hop impact of POST /api/analyze-document");
+
+console.log(JSON.stringify({ analyze, callers, impact, analyzeContext: context, analyzeRoute, routeImpact }, null, 2));
 console.error("Live HydraDB graph validation passed.");
 
 function assertIncludes(rows: Record<string, unknown>[], field: string, expected: string, label: string): void {

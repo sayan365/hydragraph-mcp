@@ -17,7 +17,7 @@ POST /v1/graphs/{graph_id}/query
 GET  /readyz
 ```
 
-It does not expose the hosted knowledge/recall SDK. HydraGraph writes explicit `CodeNode` vertices and `CALLS`, `IMPORTS`, and `CONTAINS` relationships with parameterized `UNWIND` queries. Impact analysis uses a bounded client-side breadth-first traversal because the current OSS query engine rejects the needed incoming variable-length pattern.
+It does not expose the hosted knowledge/recall SDK. HydraGraph writes explicit `CodeNode` vertices and `CALLS`, `CALLS_API`, `IMPORTS`, and `CONTAINS` relationships with parameterized `UNWIND` queries. Impact analysis uses a bounded client-side breadth-first traversal because the current OSS query engine rejects the needed incoming variable-length pattern.
 
 ## Target and demo truth
 
@@ -30,6 +30,8 @@ src.context.DocumentContext.DocumentProvider.analyzeWithAI
 ```
 
 From the actual Docwise source, HydraGraph resolves three direct callers (`scanSample`, `scanDocumentText`, and `scanDocumentFile`) plus four upstream `ScanView` handlers. `analyzeWithAI` also resolves its call to `src.data.languages.getLanguage`.
+
+The graph also connects `src.context.DocumentContext.DocumentProvider.analyzeWithAI` to the `POST /api/analyze-document` route in `api/_backend.ts` through a `CALLS_API` relationship derived from the shared static URL string.
 
 ## Required MCP tools
 
@@ -44,10 +46,11 @@ From the actual Docwise source, HydraGraph resolves three direct callers (`scanS
 | Verify HydraDB OSS API | Done | Official repo README/source checked; self-hosted endpoint is `POST /v1/graphs/{graph_id}/query`. |
 | Choose real target | Corrected / done | `sayan365/docwise` is the sole target. Earlier Groundline/OpenDesk selection was mistaken and removed. |
 | Set up tree-sitter | Done | `tree-sitter-typescript` parses `.ts` and `.tsx`; tests include Docwise’s recoverable JSX-text edge case. |
-| Extract Docwise graph | Done | Dry run: 27 files, 86 nodes, 155 edges (`59 CONTAINS`, `45 IMPORTS`, `51 CALLS`); 449 external/ambiguous calls unresolved. |
+| Extract Docwise graph | Done | Dry run: 27 files, 92 nodes, 165 edges (`65 CONTAINS`, `45 IMPORTS`, `51 CALLS`, `4 CALLS_API`); six route nodes, 449 ordinary calls unresolved, zero static fetch paths unresolved. |
 | Fresh public repository | Done | `sayan365/hydragraph-mcp`, first commit `0c1f711` on Aug 16. |
 | Self-hosted HTTP smoke check | Done | Official container healthy on localhost; mutation/read round trip passed. |
-| Ingest Docwise | Done | Generated graph replaced with 86 Docwise nodes and 155 relationships; live assertions pass. |
+| Ingest Docwise | Done | Generated graph replaced with 92 Docwise nodes and 165 relationships; live frontend/backend assertions pass. |
+| Cross-service API dependency | Done | Live Cypher and MCP checks verify `analyzeWithAI -[:CALLS_API]-> POST /api/analyze-document` and two-hop reverse impact into all three scan functions. |
 | MCP client integration | Automated check done | Stdio handshake exposes all three tools and a live Docwise `impact_of_change` call passes. Interactive demo remains. |
 | Natural-language graph context | Done | Free-text schema, HydraDB symbol matching, caller/callee reuse, two-hop impact, explicit no-match response, and raw call-site evidence are implemented and exercised through a real MCP client. No external LLM dependency. |
 | Smoke-data cleanup | Done | The two `HydraGraphSmoke` nodes were deleted from the live graph and the smoke writer/script was removed. |
@@ -62,7 +65,8 @@ From the actual Docwise source, HydraGraph resolves three direct callers (`scanS
 5. [x] Live `impact_of_change(analyzeWithAI)` returns the four upstream `ScanView` handlers.
 6. [x] MCP stdio smoke check returns the same Docwise impact chain.
 7. [x] A real `explain_context(question)` MCP call returns the matched symbol and structured graph evidence.
-8. [ ] Capture a real interactive MCP client session.
+8. [x] A route question matches `POST /api/analyze-document` and crosses `CALLS_API` into frontend impact.
+9. [ ] Capture a real interactive MCP client session.
 
 ## Risks and constraints
 
@@ -72,3 +76,4 @@ From the actual Docwise source, HydraGraph resolves three direct callers (`scanS
 - Development ports bind only to `127.0.0.1`; the startup script is not a production deployment configuration.
 - The initial graph is single-repository by design. Multi-repo namespacing is out of hackathon scope.
 - `explain_context` deliberately returns evidence rather than pre-synthesizing an answer; the calling MCP agent is responsible for reasoning over it.
+- API matching handles only static string/template paths and `app`/`router` route registrations. It does not model dynamic URLs, path parameters, request methods at fetch sites, response schemas, or anonymous route-handler internals.

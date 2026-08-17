@@ -49,4 +49,19 @@ describe("ExplainContextService", () => {
     expect(result.availableSymbols).toEqual([analyze.qualifiedName]);
     expect(graph.contextFor).not.toHaveBeenCalled();
   });
+
+  it("matches an API path in a question to a route node", () => {
+    const route: GraphSymbol = {
+      qualifiedName: "api._backend.route.POST./api/analyze-document",
+      name: "POST /api/analyze-document",
+      kind: "route",
+      file: "api/_backend.ts",
+      line: 74,
+      httpMethod: "POST",
+      routePath: "/api/analyze-document",
+    };
+
+    expect(matchQuestionToSymbol("what breaks if /api/analyze-document changes?", [analyze, route]))
+      .toEqual(route);
+  });
 });

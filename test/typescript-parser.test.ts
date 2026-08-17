@@ -43,4 +43,30 @@ export const Insights = () => <p>Documents & legal risk trends.</p>;
 
     expect(parsed.symbols.map((item) => item.qualifiedName)).toContain("Insights.Insights");
   });
+
+  it("connects a static fetch call to a matching Express route", () => {
+    const frontend = new TypeScriptParser().parse(`
+export async function analyzeWithAI() {
+  return fetch('/api/analyze-document', { method: 'POST' });
+}
+`, "src/context/DocumentContext.tsx", true);
+    const backend = new TypeScriptParser().parse(`
+function analyzeHandler() { return true; }
+app.post('/api/analyze-document', analyzeHandler);
+`, "api/_backend.ts");
+    const graph = buildGraph([frontend, backend]);
+    const route = graph.nodes.find((node) => node.kind === "route");
+    const byId = new Map(graph.nodes.map((node) => [node.id, node]));
+    const apiEdge = graph.edges.find((edge) => edge.kind === "CALLS_API");
+
+    expect(route).toMatchObject({
+      name: "POST /api/analyze-document",
+      httpMethod: "POST",
+      routePath: "/api/analyze-document",
+      handlerQualifiedName: "api._backend.analyzeHandler",
+    });
+    expect(byId.get(apiEdge?.source ?? 0)?.qualifiedName).toBe("src.context.DocumentContext.analyzeWithAI");
+    expect(byId.get(apiEdge?.target ?? 0)?.qualifiedName).toBe(route?.qualifiedName);
+    expect(graph.unresolvedApiCalls).toEqual([]);
+  });
 });

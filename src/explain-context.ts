@@ -62,6 +62,8 @@ export function matchQuestionToSymbol(question: string, symbols: GraphSymbol[]):
 function symbolScore(symbol: GraphSymbol, compactQuestion: string, questionTokens: string[]): number {
   const name = compact(symbol.name);
   const qualifiedName = compact(symbol.qualifiedName);
+  const routePath = compact(symbol.routePath ?? "");
+  if (routePath.length >= 4 && compactQuestion.includes(routePath)) return 400 + routePath.length;
   if (qualifiedName.length >= 4 && compactQuestion.includes(qualifiedName)) return 300 + qualifiedName.length;
   if (name.length >= 4 && compactQuestion.includes(name)) return 200 + name.length;
   const nearest = Math.min(...questionTokens.map((token) => editDistance(name, compact(token))), Number.POSITIVE_INFINITY);

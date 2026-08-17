@@ -12,12 +12,12 @@ The self-hosted [`hydra-db/hydradb`](https://github.com/hydra-db/hydradb) reposi
 POST /v1/graphs/{graph_id}/query
 ```
 
-HydraGraph therefore inserts AST-derived vertices and edges with batched, parameterized OpenCypher `UNWIND` queries. `CALLS`, `IMPORTS`, and `CONTAINS` edges are explicit and deterministic; no LLM relationship inference is involved.
+HydraGraph therefore inserts AST-derived vertices and edges with batched, parameterized OpenCypher `UNWIND` queries. `CALLS`, `CALLS_API`, `IMPORTS`, and `CONTAINS` edges are explicit and deterministic; no LLM relationship inference is involved. Static frontend `fetch()` paths are matched to Express route registrations to preserve cross-boundary dependencies.
 
 ## MCP tools
 
 - `find_callers`: direct reverse traversal over `CALLS` edges.
-- `impact_of_change`: bounded transitive reverse traversal for a symbol's blast radius.
+- `impact_of_change`: bounded transitive reverse traversal over `CALLS` and `CALLS_API` for a symbol or route's blast radius.
 - `explain_context`: accepts a natural-language question, matches it to a HydraDB symbol, and returns structured callers, callees, call-site evidence, and two-hop impact for the MCP client's own model to reason over.
 
 ## Quickstart
@@ -45,7 +45,7 @@ npm run mcp:smoke
 
 `mcp:smoke` verifies the tool schemas and makes live graph-backed `impact_of_change` and natural-language `explain_context` calls. No external LLM API key is required; the calling MCP client performs the reasoning.
 
-The index command replaces HydraGraph's generated `CodeNode` data and its three relationship types. The MVP intentionally stores one repository per configured HydraDB graph.
+The index command replaces HydraGraph's generated `CodeNode` data and its four relationship types. The MVP intentionally stores one repository per configured HydraDB graph.
 
 Build and run the stdio MCP server:
 
@@ -56,16 +56,17 @@ node dist/src/server.js
 
 ## Real validation scenario
 
-The target is [`sayan365/docwise`](https://github.com/sayan365/docwise), Sayan's TypeScript/React document-analysis application. HydraGraph extracts 27 source files, 86 nodes, and 155 resolved relationships. It verifies this real call chain from the checked-out source:
+The target is [`sayan365/docwise`](https://github.com/sayan365/docwise), Sayan's TypeScript/React document-analysis application. HydraGraph extracts 27 source files, 92 nodes, and 165 resolved relationships, including six Express route nodes and four `CALLS_API` edges. It verifies this real cross-boundary chain from the checked-out source:
 
 ```text
 ScanView event handlers
   -> scanSample / scanDocumentText / scanDocumentFile
   -> analyzeWithAI
-  -> getLanguage
+       -> getLanguage
+       -> POST /api/analyze-document
 ```
 
-That makes the headline question concrete: changing `src.context.DocumentContext.DocumentProvider.analyzeWithAI` affects all three scan entry points and their upstream UI handlers. External and ambiguous calls remain unresolved instead of being guessed; the current dry run reports 449 such calls.
+That makes the headline question concrete: changing the `/api/analyze-document` response format reaches `analyzeWithAI`, all three scan entry points, and their upstream UI handlers. External and ambiguous ordinary calls remain unresolved instead of being guessed; the current dry run reports 449 such calls and zero unresolved static `fetch()` paths.
 
 ## What HydraDB contributes
 

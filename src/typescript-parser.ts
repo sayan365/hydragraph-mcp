@@ -2,7 +2,7 @@ import Parser from "tree-sitter";
 import TypeScript from "tree-sitter-typescript";
 
 import { stableId } from "./ids.js";
-import type { CodeNode, ParsedCall, ParsedFile, ParsedImport } from "./model.js";
+import type { CodeNode, ParsedApiCall, ParsedCall, ParsedFile, ParsedImport } from "./model.js";
 
 type SyntaxNode = Parser.SyntaxNode;
 
@@ -31,7 +31,9 @@ export class TypeScriptParser {
     };
     const symbols: CodeNode[] = [];
     const calls: ParsedCall[] = [];
+    const apiCalls: ParsedApiCall[] = [];
     const imports: ParsedImport[] = [];
+    const routes: CodeNode[] = [];
     const symbolByFunctionNode = new Map<number, CodeNode>();
     const classNames = new Map<number, string>();
 
@@ -66,16 +68,28 @@ export class TypeScriptParser {
 
     visit(tree.rootNode, (node, ancestors) => {
       if (node.type === "call_expression" || node.type === "new_expression") {
-        const caller = nearestFunctionSymbol(ancestors, symbolByFunctionNode);
         const callee = node.childForFieldName("function") ?? node.childForFieldName("constructor");
-        if (!caller || !callee) return;
+        if (!callee) return;
         const expression = normalizeCallee(callee.text);
+
+        if (node.type === "call_expression") {
+          const route = makeRoute(node, expression, moduleName, relativePath, symbols);
+          if (route) routes.push(route);
+        }
+
+        const caller = nearestFunctionSymbol(ancestors, symbolByFunctionNode);
+        if (!caller) return;
         calls.push({
           callerQualifiedName: caller.qualifiedName,
           calleeExpression: expression,
           calleeName: expression.split(".").at(-1) ?? expression,
           line: node.startPosition.row + 1,
         });
+
+        if (node.type === "call_expression" && expression === "fetch") {
+          const path = firstStringArgument(node);
+          if (path) apiCalls.push({ callerQualifiedName: caller.qualifiedName, path, line: node.startPosition.row + 1 });
+        }
       }
 
       if (node.type === "import_statement") {
@@ -89,8 +103,50 @@ export class TypeScriptParser {
       }
     });
 
-    return { file, symbols, calls, imports };
+    return { file, symbols, calls, apiCalls, imports, routes };
   }
+}
+
+function makeRoute(
+  node: SyntaxNode,
+  expression: string,
+  moduleName: string,
+  relativePath: string,
+  symbols: CodeNode[],
+): CodeNode | undefined {
+  const match = /^(?:app|router)\.(get|post|put|delete|patch)$/.exec(expression);
+  if (!match) return undefined;
+  const routePath = firstStringArgument(node);
+  if (!routePath) return undefined;
+  const method = match[1].toUpperCase();
+  const argumentsNode = node.childForFieldName("arguments");
+  const handlerNode = argumentsNode?.namedChildren[1];
+  const handlerQualifiedName = handlerNode?.type === "identifier"
+    ? symbols.find((symbol) => symbol.name === handlerNode.text)?.qualifiedName
+    : undefined;
+  const qualifiedName = `${moduleName}.route.${method}.${routePath}`;
+  return {
+    id: stableId(`route:${relativePath}:${method}:${routePath}:${node.startPosition.row + 1}`),
+    kind: "route",
+    name: `${method} ${routePath}`,
+    qualifiedName,
+    file: relativePath,
+    startLine: node.startPosition.row + 1,
+    endLine: node.endPosition.row + 1,
+    httpMethod: method,
+    routePath,
+    handlerQualifiedName,
+  };
+}
+
+function firstStringArgument(node: SyntaxNode): string | undefined {
+  const first = node.childForFieldName("arguments")?.namedChildren[0];
+  if (!first) return undefined;
+  if (first.type === "string") return first.text.replace(/^['"]|['"]$/g, "");
+  if (first.type === "template_string" && !first.namedChildren.some((child) => child.type === "template_substitution")) {
+    return first.text.replace(/^`|`$/g, "");
+  }
+  return undefined;
 }
 
 function makeSymbol(

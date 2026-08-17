@@ -2,15 +2,17 @@ import type { CodeEdge, CodeGraph, CodeNode, ParsedFile } from "./model.js";
 import { stableId } from "./ids.js";
 
 export function buildGraph(files: ParsedFile[]): CodeGraph {
-  const nodes = files.flatMap((file) => [file.file, ...file.symbols]);
+  const nodes = files.flatMap((file) => [file.file, ...file.symbols, ...file.routes]);
   const byQualifiedName = new Map(nodes.map((node) => [node.qualifiedName, node]));
   const bySimpleName = groupBy(nodes, (node) => node.name);
   const moduleFiles = new Map(files.map((file) => [withoutSourceExtension(file.file.file), file.file]));
   const edges: CodeEdge[] = [];
   const unresolvedCalls = [];
+  const unresolvedApiCalls = [];
+  const routes = nodes.filter((node) => node.kind === "route");
 
   for (const parsed of files) {
-    for (const symbol of parsed.symbols) {
+    for (const symbol of [...parsed.symbols, ...parsed.routes]) {
       edges.push(edge("CONTAINS", parsed.file, symbol, `${symbol.file}:${symbol.startLine}`));
     }
     for (const item of parsed.imports) {
@@ -27,9 +29,27 @@ export function buildGraph(files: ParsedFile[]): CodeGraph {
         unresolvedCalls.push(call);
       }
     }
+    for (const apiCall of parsed.apiCalls) {
+      const caller = byQualifiedName.get(apiCall.callerQualifiedName);
+      const route = chooseRoute(apiCall.path, routes);
+      if (caller && route) {
+        edges.push(edge("CALLS_API", caller, route, `${caller.file}:${apiCall.line} fetch(${JSON.stringify(apiCall.path)})`));
+      } else {
+        unresolvedApiCalls.push(apiCall);
+      }
+    }
   }
 
-  return { nodes, edges: deduplicateEdges(edges), unresolvedCalls };
+  return { nodes, edges: deduplicateEdges(edges), unresolvedCalls, unresolvedApiCalls };
+}
+
+function chooseRoute(path: string, routes: CodeNode[]): CodeNode | undefined {
+  const exact = routes.filter((route) => route.routePath === path);
+  if (exact.length === 1) return exact[0];
+  const prefix = routes
+    .filter((route) => route.routePath && route.routePath !== "*" && (path.startsWith(route.routePath) || route.routePath.startsWith(path)))
+    .sort((left, right) => (right.routePath?.length ?? 0) - (left.routePath?.length ?? 0));
+  return prefix.length === 1 || prefix[0]?.routePath !== prefix[1]?.routePath ? prefix[0] : undefined;
 }
 
 function chooseCallee(expression: string, receiverType: string | undefined, caller: CodeNode | undefined, candidates: CodeNode[]): CodeNode | undefined {

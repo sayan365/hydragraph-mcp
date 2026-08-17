@@ -35,11 +35,15 @@ try {
 
   const explanation = await client.callTool({
     name: "explain_context",
-    arguments: { question: "what would break if I changed how analyzeWithAI works?" },
+    arguments: { question: "what would break in the frontend if the /api/analyze-document response format changed?" },
   });
   const explanationPayload = JSON.stringify(explanation.content);
-  if (!explanationPayload.includes("src.context.DocumentContext.DocumentProvider.analyzeWithAI") || !explanationPayload.includes("evidence")) {
-    throw new Error(`MCP explanation lacked the matched symbol or graph evidence: ${explanationPayload}`);
+  if (
+    !explanationPayload.includes("api._backend.route.POST./api/analyze-document") ||
+    !explanationPayload.includes("src.context.DocumentContext.DocumentProvider.analyzeWithAI") ||
+    !explanationPayload.includes("CALLS_API")
+  ) {
+    throw new Error(`MCP explanation lacked the route, frontend caller, or CALLS_API evidence: ${explanationPayload}`);
   }
 
   console.log(`MCP stdio smoke check passed (${names.join(", ")}).`);

@@ -14,7 +14,13 @@ export interface GraphSymbol {
   kind: string;
   file: string;
   line: number;
+  httpMethod?: string;
+  routePath?: string;
+  handlerQualifiedName?: string;
 }
+
+const RELATIONSHIP_KINDS = ["CALLS", "CALLS_API", "IMPORTS", "CONTAINS"] as const;
+const CALL_RELATIONSHIP_KINDS = ["CALLS", "CALLS_API"] as const;
 
 interface HydraValue { type: string; value?: unknown }
 interface HydraResponse {
@@ -44,7 +50,7 @@ export class HydraDbClient {
 
   async ingest(graph: CodeGraph, batchSize = 200): Promise<void> {
     for (const batch of batches(graph.nodes, batchSize)) await this.ingestNodes(batch);
-    for (const kind of ["CONTAINS", "IMPORTS", "CALLS"] as const) {
+    for (const kind of RELATIONSHIP_KINDS) {
       for (const batch of batches(graph.edges.filter((edge) => edge.kind === kind), batchSize)) {
         await this.ingestEdges(kind, batch);
       }
@@ -52,7 +58,7 @@ export class HydraDbClient {
   }
 
   async replaceCodeGraph(graph: CodeGraph, batchSize = 200): Promise<void> {
-    for (const kind of ["CALLS", "IMPORTS", "CONTAINS"] as const) {
+    for (const kind of RELATIONSHIP_KINDS) {
       await this.query(`MATCH ()-[r:${kind}]->() DELETE r`);
     }
     await this.query("MATCH (n:CodeNode) DELETE n");
@@ -60,11 +66,14 @@ export class HydraDbClient {
   }
 
   async findCallers(symbol: string): Promise<Record<string, unknown>[]> {
-    const response = await this.query(
-      "MATCH (caller:CodeNode)-[relation:CALLS]->(target:CodeNode {qualified_name: $symbol}) RETURN caller.qualified_name AS caller, caller.file AS file, caller.start_line AS line, relation.evidence AS evidence",
-      { symbol },
-    );
-    return rowsToObjects(response);
+    const results = await Promise.all(CALL_RELATIONSHIP_KINDS.map(async (kind) => {
+      const response = await this.query(
+        `MATCH (caller:CodeNode)-[relation:${kind}]->(target:CodeNode {qualified_name: $symbol}) RETURN caller.qualified_name AS caller, caller.file AS file, caller.start_line AS line, caller.kind AS kind, caller.http_method AS http_method, caller.route_path AS route_path, relation.evidence AS evidence`,
+        { symbol },
+      );
+      return rowsToObjects(response).map((row) => callRow(row, "caller", kind));
+    }));
+    return results.flat();
   }
 
   async impactOfChange(symbol: string, maxDepth = 10): Promise<Record<string, unknown>[]> {
@@ -80,7 +89,17 @@ export class HydraDbClient {
           if (typeof qualifiedName !== "string" || visited.has(qualifiedName)) continue;
           visited.add(qualifiedName);
           next.push(qualifiedName);
-          affected.push({ symbol: qualifiedName, file: caller.file, line: caller.line, evidence: caller.evidence, depth });
+          affected.push({
+            symbol: qualifiedName,
+            file: caller.file,
+            line: caller.line,
+            kind: caller.kind,
+            ...(caller.httpMethod ? { httpMethod: caller.httpMethod } : {}),
+            ...(caller.routePath ? { routePath: caller.routePath } : {}),
+            relationship: caller.relationship,
+            evidence: caller.evidence,
+            depth,
+          });
         }
       }
       frontier = next;
@@ -90,11 +109,14 @@ export class HydraDbClient {
   }
 
   async findCallees(symbol: string): Promise<Record<string, unknown>[]> {
-    const response = await this.query(
-      "MATCH (source:CodeNode {qualified_name: $symbol})-[relation:CALLS]->(callee:CodeNode) RETURN callee.qualified_name AS callee, callee.file AS file, callee.start_line AS line, relation.evidence AS evidence",
-      { symbol },
-    );
-    return rowsToObjects(response);
+    const results = await Promise.all(CALL_RELATIONSHIP_KINDS.map(async (kind) => {
+      const response = await this.query(
+        `MATCH (source:CodeNode {qualified_name: $symbol})-[relation:${kind}]->(callee:CodeNode) RETURN callee.qualified_name AS callee, callee.file AS file, callee.start_line AS line, callee.kind AS kind, callee.http_method AS http_method, callee.route_path AS route_path, relation.evidence AS evidence`,
+        { symbol },
+      );
+      return rowsToObjects(response).map((row) => callRow(row, "callee", kind));
+    }));
+    return results.flat();
   }
 
   async contextFor(symbol: string): Promise<{ callers: Record<string, unknown>[]; callees: Record<string, unknown>[] }> {
@@ -104,7 +126,7 @@ export class HydraDbClient {
 
   async listSymbols(): Promise<GraphSymbol[]> {
     const response = await this.query(
-      "MATCH (n:CodeNode) RETURN n.qualified_name AS qualified_name, n.name AS name, n.kind AS kind, n.file AS file, n.start_line AS line",
+      "MATCH (n:CodeNode) RETURN n.qualified_name AS qualified_name, n.name AS name, n.kind AS kind, n.file AS file, n.start_line AS line, n.http_method AS http_method, n.route_path AS route_path, n.handler_qualified_name AS handler_qualified_name",
     );
     return rowsToObjects(response).flatMap((row) => {
       if (
@@ -114,14 +136,23 @@ export class HydraDbClient {
         typeof row.file !== "string" ||
         typeof row.line !== "number"
       ) return [];
-      return [{ qualifiedName: row.qualified_name, name: row.name, kind: row.kind, file: row.file, line: row.line }];
+      return [{
+        qualifiedName: row.qualified_name,
+        name: row.name,
+        kind: row.kind,
+        file: row.file,
+        line: row.line,
+        httpMethod: typeof row.http_method === "string" && row.http_method ? row.http_method : undefined,
+        routePath: typeof row.route_path === "string" && row.route_path ? row.route_path : undefined,
+        handlerQualifiedName: typeof row.handler_qualified_name === "string" && row.handler_qualified_name ? row.handler_qualified_name : undefined,
+      }];
     });
   }
 
   private ingestNodes(nodes: CodeNode[]): Promise<HydraResponse> {
     return this.query(
-      "UNWIND $rows AS row MERGE (n {id: row.id}) SET n:CodeNode, n.kind = row.kind, n.name = row.name, n.qualified_name = row.qualified_name, n.file = row.file, n.start_line = row.start_line, n.end_line = row.end_line",
-      { rows: nodes.map((node) => ({ id: node.id, kind: node.kind, name: node.name, qualified_name: node.qualifiedName, file: node.file, start_line: node.startLine, end_line: node.endLine })) },
+      "UNWIND $rows AS row MERGE (n {id: row.id}) SET n:CodeNode, n.kind = row.kind, n.name = row.name, n.qualified_name = row.qualified_name, n.file = row.file, n.start_line = row.start_line, n.end_line = row.end_line, n.http_method = row.http_method, n.route_path = row.route_path, n.handler_qualified_name = row.handler_qualified_name",
+      { rows: nodes.map((node) => ({ id: node.id, kind: node.kind, name: node.name, qualified_name: node.qualifiedName, file: node.file, start_line: node.startLine, end_line: node.endLine, http_method: node.httpMethod ?? "", route_path: node.routePath ?? "", handler_qualified_name: node.handlerQualifiedName ?? "" })) },
     );
   }
 
@@ -141,6 +172,19 @@ function batches<T>(items: T[], size: number): T[][] {
 
 function rowsToObjects(response: HydraResponse): Record<string, unknown>[] {
   return response.rows.map((row) => Object.fromEntries(response.columns.map((column, index) => [column, row[index]?.value ?? null])));
+}
+
+function callRow(row: Record<string, unknown>, direction: "caller" | "callee", relationship: "CALLS" | "CALLS_API"): Record<string, unknown> {
+  return {
+    [direction]: row[direction],
+    file: row.file,
+    line: row.line,
+    kind: row.kind,
+    ...(typeof row.http_method === "string" && row.http_method ? { httpMethod: row.http_method } : {}),
+    ...(typeof row.route_path === "string" && row.route_path ? { routePath: row.route_path } : {}),
+    evidence: row.evidence,
+    relationship,
+  };
 }
 
 export function configFromEnvironment(): HydraDbConfig {
