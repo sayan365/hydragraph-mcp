@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import type { CodeEdge, CodeGraph, CodeNode } from "./model.js";
 
 export interface HydraDbConfig {
@@ -188,17 +191,32 @@ function callRow(row: Record<string, unknown>, direction: "caller" | "callee", r
 }
 
 export function configFromEnvironment(): HydraDbConfig {
+  const local = readLocalConfig();
   return {
-    url: process.env.HYDRADB_URL ?? "http://127.0.0.1:8443",
-    token: required("HYDRADB_TOKEN"),
-    namespace: process.env.HYDRADB_NAMESPACE ?? "default",
+    url: process.env.HYDRADB_URL ?? local.url ?? "http://127.0.0.1:8443",
+    token: required("HYDRADB_TOKEN", local.token),
+    namespace: process.env.HYDRADB_NAMESPACE ?? local.namespace ?? "default",
     graphId: process.env.HYDRADB_GRAPH_ID ?? "default",
     cellId: process.env.HYDRADB_CELL_ID ?? "cell-0",
   };
 }
 
-function required(name: string): string {
-  const value = process.env[name];
-  if (!value) throw new Error(`Missing required environment variable ${name}`);
+function readLocalConfig(): Partial<Pick<HydraDbConfig, "url" | "token" | "namespace">> {
+  const path = resolve(process.cwd(), ".hydragraph", "config.json");
+  if (!existsSync(path)) return {};
+
+  const value: unknown = JSON.parse(readFileSync(path, "utf8"));
+  if (!value || typeof value !== "object") throw new Error(`Invalid HydraGraph config at ${path}`);
+  const config = value as Record<string, unknown>;
+  return {
+    ...(typeof config.url === "string" ? { url: config.url } : {}),
+    ...(typeof config.token === "string" ? { token: config.token } : {}),
+    ...(typeof config.namespace === "string" ? { namespace: config.namespace } : {}),
+  };
+}
+
+function required(name: string, fallback?: string): string {
+  const value = process.env[name] ?? fallback;
+  if (!value) throw new Error(`Missing ${name}; set it in the environment or .hydragraph/config.json`);
   return value;
 }
