@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/hydragraph-banner.png" alt="HydraGraph MCP banner" width="100%">
+</p>
+
 # HydraGraph MCP
 
 AI coding agents such as Claude Code and Codex usually answer “what depends on this?” by searching for similar text and inferring the result. HydraGraph instead parses a real codebase into a structural call graph, persists that graph in HydraDB, and exposes it through MCP. The agent receives verified callers, callees, source locations, and change-impact paths instead of guesses—including dependencies that cross from a frontend `fetch()` call to the matching backend route.
